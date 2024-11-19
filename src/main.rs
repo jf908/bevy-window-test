@@ -9,7 +9,16 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
-        .add_systems(Update, (update_ui, update_buttons, update_monitor_buttons))
+        .add_systems(
+            Update,
+            (
+                update_ui,
+                update_buttons,
+                update_monitor_buttons,
+                update_pending,
+            ),
+        )
+        .init_resource::<PendingChanges>()
         .add_plugins(FpsOverlayPlugin {
             config: FpsOverlayConfig {
                 text_config: TextFont {
@@ -27,22 +36,57 @@ pub struct MonitorNode;
 
 #[derive(Component)]
 enum TextMode {
-    Monitor,
-    PresentMode,
     WindowMode,
-    WindowPosition,
+    PresentMode,
     PhysicalWindowSize,
     LogicalWindowSize,
     ScaleFactor,
+    WindowPosition,
+    Monitor,
 }
 
 #[derive(Component)]
 enum ButtonType {
+    Apply,
     SetWindowMode(WindowMode),
+    SetPresentMode(PresentMode),
     SetResolution((u32, u32)),
     SetScaleFactor(f32),
     SetPosition(WindowPosition),
-    SetPresentMode(PresentMode),
+}
+
+impl ButtonType {
+    fn is_active(&self, pending: &PendingChanges) -> bool {
+        match self {
+            ButtonType::Apply => false,
+            ButtonType::SetWindowMode(mode) => pending.window_mode == Some(*mode),
+            ButtonType::SetPresentMode(mode) => pending.present_mode == Some(*mode),
+            ButtonType::SetResolution((width, height)) => {
+                pending.resolution == Some((*width, *height))
+            }
+            ButtonType::SetScaleFactor(scale_factor) => pending.scale_factor == Some(*scale_factor),
+            ButtonType::SetPosition(position) => pending.position == Some(*position),
+        }
+    }
+}
+
+#[derive(Default, Resource)]
+pub struct PendingChanges {
+    pub window_mode: Option<WindowMode>,
+    pub present_mode: Option<PresentMode>,
+    pub resolution: Option<(u32, u32)>,
+    pub scale_factor: Option<f32>,
+    pub position: Option<WindowPosition>,
+}
+
+impl PendingChanges {
+    pub fn is_empty(&self) -> bool {
+        self.window_mode.is_none()
+            && self.present_mode.is_none()
+            && self.resolution.is_none()
+            && self.scale_factor.is_none()
+            && self.position.is_none()
+    }
 }
 
 fn setup(mut commands: Commands) {
@@ -63,6 +107,15 @@ fn setup(mut commands: Commands) {
             ..default()
         })
         .with_children(|parent| {
+            parent
+                .spawn(Node {
+                    column_gap: Val::Px(8.0),
+                    ..default()
+                })
+                .with_children(|parent| {
+                    create_button(parent, ButtonType::Apply, "Apply");
+                });
+
             parent
                 .spawn(Node {
                     column_gap: Val::Px(8.0),
@@ -160,28 +213,25 @@ fn setup(mut commands: Commands) {
                 })
                 .with_child((TextMode::WindowMode, Text::new(""), font.clone()))
                 .with_child((TextMode::PresentMode, Text::new(""), font.clone()))
-                .with_child((TextMode::WindowPosition, Text::new(""), font.clone()))
                 .with_child((TextMode::PhysicalWindowSize, Text::new(""), font.clone()))
                 .with_child((TextMode::LogicalWindowSize, Text::new(""), font.clone()))
                 .with_child((TextMode::ScaleFactor, Text::new(""), font.clone()))
+                .with_child((TextMode::WindowPosition, Text::new(""), font.clone()))
                 .with_child((TextMode::Monitor, Text::new(""), font.clone()));
         });
 }
-
-#[derive(Default)]
-struct MonitorCache(usize);
 
 fn update_monitor_buttons(
     mut commands: Commands,
     monitor_node: Single<(Entity, Option<&Children>), With<MonitorNode>>,
     monitors: Query<&Monitor>,
-    mut monitor_len: Local<MonitorCache>,
+    mut monitor_len: Local<usize>,
 ) {
-    if monitor_len.0 == monitors.iter().len() {
+    if *monitor_len == monitors.iter().len() {
         return;
     }
 
-    monitor_len.0 = monitors.iter().len();
+    *monitor_len = monitors.iter().len();
 
     if let Some(children) = monitor_node.1 {
         for child in children.iter() {
@@ -263,6 +313,7 @@ fn monitor_to_string(monitor: &Monitor) -> String {
 }
 
 fn update_buttons(
+    mut pending: ResMut<PendingChanges>,
     mut button_query: Query<
         (&Interaction, &ButtonType, &mut BackgroundColor),
         Changed<Interaction>,
@@ -272,28 +323,76 @@ fn update_buttons(
     for (interaction, button_type, mut background_color) in &mut button_query {
         match interaction {
             Interaction::Pressed => match button_type {
+                ButtonType::Apply => {
+                    if let Some(mode) = pending.window_mode.take() {
+                        window.mode = mode;
+                    }
+                    if let Some(mode) = pending.present_mode.take() {
+                        window.present_mode = mode;
+                    }
+                    if let Some((width, height)) = pending.resolution.take() {
+                        window.resolution.set_physical_resolution(width, height);
+                    }
+                    if let Some(scale_factor) = pending.scale_factor.take() {
+                        window.resolution.set_scale_factor(scale_factor);
+                    }
+                    if let Some(position) = pending.position.take() {
+                        window.position = position;
+                    }
+
+                    *pending = PendingChanges::default();
+                }
                 ButtonType::SetWindowMode(mode) => {
-                    window.mode = *mode;
-                }
-                ButtonType::SetResolution((width, height)) => {
-                    window.resolution.set_physical_resolution(*width, *height);
-                }
-                ButtonType::SetPosition(position) => {
-                    window.position = *position;
-                }
-                ButtonType::SetScaleFactor(scale_factor) => {
-                    window.resolution.set_scale_factor(*scale_factor);
+                    pending.window_mode = Some(*mode);
                 }
                 ButtonType::SetPresentMode(mode) => {
-                    window.present_mode = *mode;
+                    pending.present_mode = Some(*mode);
+                }
+                ButtonType::SetResolution((width, height)) => {
+                    pending.resolution = Some((*width, *height));
+                }
+                ButtonType::SetScaleFactor(scale_factor) => {
+                    pending.scale_factor = Some(*scale_factor);
+                }
+                ButtonType::SetPosition(position) => {
+                    pending.position = Some(*position);
                 }
             },
             Interaction::Hovered => {
-                background_color.0 = tailwind::SLATE_600.into();
+                background_color.0 = match (button_type.is_active(&pending), button_type) {
+                    (true, _) => tailwind::BLUE_400.into(),
+                    (false, ButtonType::Apply) if pending.is_empty() => {
+                        tailwind::SLATE_700.with_alpha(0.1).into()
+                    }
+                    _ => tailwind::SLATE_600.into(),
+                }
             }
             Interaction::None => {
-                background_color.0 = tailwind::SLATE_700.into();
+                background_color.0 = match (button_type.is_active(&pending), button_type) {
+                    (true, _) => tailwind::BLUE_400.into(),
+                    (false, ButtonType::Apply) if pending.is_empty() => {
+                        tailwind::SLATE_700.with_alpha(0.1).into()
+                    }
+                    _ => tailwind::SLATE_700.into(),
+                }
             }
+        }
+    }
+}
+
+fn update_pending(
+    pending: Res<PendingChanges>,
+    mut button_query: Query<(&ButtonType, &mut BackgroundColor)>,
+) {
+    if pending.is_changed() {
+        for (button_type, mut background_color) in &mut button_query {
+            background_color.0 = match (button_type.is_active(&pending), button_type) {
+                (true, _) => tailwind::BLUE_400.into(),
+                (false, ButtonType::Apply) if pending.is_empty() => {
+                    tailwind::SLATE_700.with_alpha(0.1).into()
+                }
+                _ => tailwind::SLATE_700.into(),
+            };
         }
     }
 }
