@@ -48,6 +48,7 @@ enum TextMode {
 #[derive(Component)]
 enum ButtonType {
     Apply,
+    Cancel,
     SetWindowMode(WindowMode),
     SetPresentMode(PresentMode),
     SetResolution((u32, u32)),
@@ -55,10 +56,15 @@ enum ButtonType {
     SetPosition(WindowPosition),
 }
 
+const ACTIVE_COLOR: Srgba = tailwind::BLUE_300;
+const HOVER_COLOR: Srgba = tailwind::SLATE_700;
+const BUTTON_COLOR: Srgba = tailwind::SLATE_600;
+
 impl ButtonType {
     fn is_active(&self, pending: &PendingChanges) -> bool {
         match self {
             ButtonType::Apply => false,
+            ButtonType::Cancel => false,
             ButtonType::SetWindowMode(mode) => pending.window_mode == Some(*mode),
             ButtonType::SetPresentMode(mode) => pending.present_mode == Some(*mode),
             ButtonType::SetResolution((width, height)) => {
@@ -66,6 +72,17 @@ impl ButtonType {
             }
             ButtonType::SetScaleFactor(scale_factor) => pending.scale_factor == Some(*scale_factor),
             ButtonType::SetPosition(position) => pending.position == Some(*position),
+        }
+    }
+
+    fn get_color(&self, pending: &PendingChanges, hovering: bool) -> Color {
+        match (self, self.is_active(&pending), hovering) {
+            (_, true, _) => ACTIVE_COLOR.into(),
+            (ButtonType::Apply | ButtonType::Cancel, false, _) if pending.is_empty() => {
+                BUTTON_COLOR.with_alpha(0.1).into()
+            }
+            (_, _, true) => HOVER_COLOR.into(),
+            _ => BUTTON_COLOR.into(),
         }
     }
 }
@@ -93,7 +110,7 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
 
     let font = TextFont {
-        font_size: 16.0,
+        font_size: 14.0,
         ..default()
     };
 
@@ -114,6 +131,7 @@ fn setup(mut commands: Commands) {
                 })
                 .with_children(|parent| {
                     create_button(parent, ButtonType::Apply, "Apply");
+                    create_button(parent, ButtonType::Cancel, "Cancel");
                 });
 
             parent
@@ -166,6 +184,11 @@ fn setup(mut commands: Commands) {
                         ButtonType::SetPresentMode(PresentMode::AutoNoVsync),
                         "Set AutoNoVsync",
                     );
+                    create_button(
+                        parent,
+                        ButtonType::SetPresentMode(PresentMode::Fifo),
+                        "Set Fifo",
+                    );
                 });
 
             parent
@@ -184,6 +207,11 @@ fn setup(mut commands: Commands) {
                         parent,
                         ButtonType::SetResolution((1920, 1080)),
                         "Set 1920x1080",
+                    );
+                    create_button(
+                        parent,
+                        ButtonType::SetResolution((2560, 1440)),
+                        "Set 2560x1440",
                     );
                 });
 
@@ -362,6 +390,9 @@ fn update_buttons(
 
                     *pending = PendingChanges::default();
                 }
+                ButtonType::Cancel => {
+                    *pending = PendingChanges::default();
+                }
                 ButtonType::SetWindowMode(mode) => {
                     pending.window_mode = Some(*mode);
                 }
@@ -379,22 +410,10 @@ fn update_buttons(
                 }
             },
             Interaction::Hovered => {
-                background_color.0 = match (button_type.is_active(&pending), button_type) {
-                    (true, _) => tailwind::BLUE_400.into(),
-                    (false, ButtonType::Apply) if pending.is_empty() => {
-                        tailwind::SLATE_700.with_alpha(0.1).into()
-                    }
-                    _ => tailwind::SLATE_600.into(),
-                }
+                background_color.0 = button_type.get_color(&pending, true);
             }
             Interaction::None => {
-                background_color.0 = match (button_type.is_active(&pending), button_type) {
-                    (true, _) => tailwind::BLUE_400.into(),
-                    (false, ButtonType::Apply) if pending.is_empty() => {
-                        tailwind::SLATE_700.with_alpha(0.1).into()
-                    }
-                    _ => tailwind::SLATE_700.into(),
-                }
+                background_color.0 = button_type.get_color(&pending, false);
             }
         }
     }
@@ -406,13 +425,7 @@ fn update_pending(
 ) {
     if pending.is_changed() {
         for (button_type, mut background_color) in &mut button_query {
-            background_color.0 = match (button_type.is_active(&pending), button_type) {
-                (true, _) => tailwind::BLUE_400.into(),
-                (false, ButtonType::Apply) if pending.is_empty() => {
-                    tailwind::SLATE_700.with_alpha(0.1).into()
-                }
-                _ => tailwind::SLATE_700.into(),
-            };
+            background_color.0 = button_type.get_color(&pending, false);
         }
     }
 }
@@ -431,7 +444,7 @@ fn create_button(child_builder: &mut ChildBuilder, button_type: ButtonType, text
         .with_child((
             Text::new(text),
             TextFont {
-                font_size: 16.0,
+                font_size: 14.0,
                 ..default()
             },
         ));
