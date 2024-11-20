@@ -51,7 +51,7 @@ enum ButtonType {
     SetWindowMode(WindowMode),
     SetPresentMode(PresentMode),
     SetResolution((u32, u32)),
-    SetScaleFactor(f32),
+    SetScaleFactor(Option<f32>),
     SetPosition(WindowPosition),
 }
 
@@ -75,7 +75,7 @@ pub struct PendingChanges {
     pub window_mode: Option<WindowMode>,
     pub present_mode: Option<PresentMode>,
     pub resolution: Option<(u32, u32)>,
-    pub scale_factor: Option<f32>,
+    pub scale_factor: Option<Option<f32>>,
     pub position: Option<WindowPosition>,
 }
 
@@ -193,9 +193,22 @@ fn setup(mut commands: Commands) {
                     ..default()
                 })
                 .with_children(|parent| {
-                    create_button(parent, ButtonType::SetScaleFactor(1.0), "Set 1x scaling");
-                    create_button(parent, ButtonType::SetScaleFactor(1.5), "Set 1.5x scaling");
-                    create_button(parent, ButtonType::SetScaleFactor(2.0), "Set 2x scaling");
+                    create_button(parent, ButtonType::SetScaleFactor(None), "Reset scaling");
+                    create_button(
+                        parent,
+                        ButtonType::SetScaleFactor(Some(1.0)),
+                        "Set 1x scaling",
+                    );
+                    create_button(
+                        parent,
+                        ButtonType::SetScaleFactor(Some(1.5)),
+                        "Set 1.5x scaling",
+                    );
+                    create_button(
+                        parent,
+                        ButtonType::SetScaleFactor(Some(2.0)),
+                        "Set 2x scaling",
+                    );
                 });
 
             parent.spawn((
@@ -294,9 +307,16 @@ fn update_ui(
             TextMode::LogicalWindowSize => {
                 format!("Logical resolution: {}x{}", window.width(), window.height())
             }
-            TextMode::ScaleFactor => {
-                format!("Scale factor: {}", window.scale_factor())
-            }
+            TextMode::ScaleFactor => match window.resolution.scale_factor_override() {
+                None => format!("Scale factor: {}", window.resolution.base_scale_factor()),
+                Some(scale_override) => {
+                    format!(
+                        "Scale factor: {} (Override: {})",
+                        window.resolution.base_scale_factor(),
+                        scale_override
+                    )
+                }
+            },
         }
     }
 }
@@ -334,7 +354,7 @@ fn update_buttons(
                         window.resolution.set_physical_resolution(width, height);
                     }
                     if let Some(scale_factor) = pending.scale_factor.take() {
-                        window.resolution.set_scale_factor(scale_factor);
+                        window.resolution.set_scale_factor_override(scale_factor);
                     }
                     if let Some(position) = pending.position.take() {
                         window.position = position;
