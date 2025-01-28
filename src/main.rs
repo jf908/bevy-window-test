@@ -2,7 +2,7 @@ use bevy::{
     color::palettes::tailwind,
     dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin},
     prelude::*,
-    window::{Monitor, PresentMode, WindowMode},
+    window::{Monitor, PresentMode, VideoMode, WindowMode},
 };
 
 fn main() {
@@ -154,15 +154,9 @@ fn setup(mut commands: Commands) {
                     );
                     create_button(
                         parent,
-                        ButtonType::SetWindowMode(WindowMode::SizedFullscreen(
-                            MonitorSelection::Current,
-                        )),
-                        "Set SizedFullscreen",
-                    );
-                    create_button(
-                        parent,
                         ButtonType::SetWindowMode(WindowMode::Fullscreen(
                             MonitorSelection::Current,
+                            VideoModeSelection::Current,
                         )),
                         "Set Fullscreen",
                     );
