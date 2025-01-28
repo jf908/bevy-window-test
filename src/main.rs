@@ -270,7 +270,7 @@ fn update_monitor_buttons(
 
     if let Some(children) = monitor_node.1 {
         for child in children.iter() {
-            commands.entity(*child).despawn_recursive();
+            commands.entity(*child).despawn();
         }
     }
 
@@ -424,7 +424,7 @@ fn update_pending(
     }
 }
 
-fn create_button(child_builder: &mut ChildBuilder, button_type: ButtonType, text: &str) {
+fn create_button(child_builder: &mut ChildSpawnerCommands, button_type: ButtonType, text: &str) {
     child_builder
         .spawn((
             button_type,
