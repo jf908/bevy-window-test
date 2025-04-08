@@ -375,6 +375,16 @@ fn update_buttons(
                     if let Some(mode) = pending.window_mode.take() {
                         window.mode = mode;
                     }
+
+                    if matches!(window.mode, WindowMode::BorderlessFullscreen(_)) {
+                        // Set pending.position to None and handle separately if in Borderless
+                        if let Some(WindowPosition::Centered(monitor_selection)) = pending.position
+                        {
+                            window.mode = WindowMode::BorderlessFullscreen(monitor_selection);
+                            pending.position = None;
+                        }
+                    }
+
                     if let Some(mode) = pending.present_mode.take() {
                         window.present_mode = mode;
                     }
