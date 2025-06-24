@@ -154,15 +154,9 @@ fn setup(mut commands: Commands) {
                     );
                     create_button(
                         parent,
-                        ButtonType::SetWindowMode(WindowMode::SizedFullscreen(
-                            MonitorSelection::Current,
-                        )),
-                        "Set SizedFullscreen",
-                    );
-                    create_button(
-                        parent,
                         ButtonType::SetWindowMode(WindowMode::Fullscreen(
                             MonitorSelection::Current,
+                            VideoModeSelection::Current,
                         )),
                         "Set Fullscreen",
                     );
@@ -276,7 +270,7 @@ fn update_monitor_buttons(
 
     if let Some(children) = monitor_node.1 {
         for child in children.iter() {
-            commands.entity(*child).despawn_recursive();
+            commands.entity(child).despawn();
         }
     }
 
@@ -367,6 +361,7 @@ fn update_buttons(
         Changed<Interaction>,
     >,
     mut window: Single<&mut Window>,
+    monitors: Query<&Monitor>,
 ) {
     for (interaction, button_type, mut background_color) in &mut button_query {
         match interaction {
@@ -376,13 +371,49 @@ fn update_buttons(
                         window.mode = mode;
                     }
 
-                    if matches!(window.mode, WindowMode::BorderlessFullscreen(_)) {
-                        // Set pending.position to None and handle separately if in Borderless
-                        if let Some(WindowPosition::Centered(monitor_selection)) = pending.position
-                        {
-                            window.mode = WindowMode::BorderlessFullscreen(monitor_selection);
-                            pending.position = None;
+                    match window.mode {
+                        WindowMode::BorderlessFullscreen(_) => {
+                            // Set pending.position to None and handle separately if in Borderless
+                            if let Some(WindowPosition::Centered(monitor_selection)) =
+                                pending.position
+                            {
+                                window.mode = WindowMode::BorderlessFullscreen(monitor_selection);
+                                pending.position = None;
+                            }
                         }
+                        WindowMode::Fullscreen(current_monitor, current_videomode) => {
+                            let monitor_selection =
+                                if let Some(WindowPosition::Centered(monitor_selection)) =
+                                    pending.position
+                                {
+                                    pending.position = None;
+
+                                    monitor_selection
+                                } else {
+                                    current_monitor
+                                };
+
+                            let video_mode = if let Some((width, height)) = pending.resolution {
+                                pending.resolution = None;
+
+                                // TODO: Try to work this out properly as it makes a lot of assumptions.
+                                VideoModeSelection::Specific(bevy::window::VideoMode {
+                                    physical_size: UVec2::new(width, height),
+                                    bit_depth: 32,
+                                    refresh_rate_millihertz: monitors
+                                        .iter()
+                                        .flat_map(|m| m.video_modes.iter())
+                                        .max_by_key(|vm| vm.refresh_rate_millihertz)
+                                        .unwrap()
+                                        .refresh_rate_millihertz,
+                                })
+                            } else {
+                                current_videomode
+                            };
+
+                            window.mode = WindowMode::Fullscreen(monitor_selection, video_mode);
+                        }
+                        _ => {}
                     }
 
                     if let Some(mode) = pending.present_mode.take() {
@@ -440,7 +471,7 @@ fn update_pending(
     }
 }
 
-fn create_button(child_builder: &mut ChildBuilder, button_type: ButtonType, text: &str) {
+fn create_button(child_builder: &mut ChildSpawnerCommands, button_type: ButtonType, text: &str) {
     child_builder
         .spawn((
             button_type,
