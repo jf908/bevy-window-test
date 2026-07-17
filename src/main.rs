@@ -22,7 +22,7 @@ fn main() {
         .add_plugins(FpsOverlayPlugin {
             config: FpsOverlayConfig {
                 text_config: TextFont {
-                    font_size: 14.0,
+                    font_size: FontSize::Px(14.0),
                     ..default()
                 },
                 ..default()
@@ -110,7 +110,7 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
 
     let font = TextFont {
-        font_size: 14.0,
+        font_size: FontSize::Px(14.0),
         ..default()
     };
 
@@ -485,7 +485,7 @@ fn create_button(child_builder: &mut ChildSpawnerCommands, button_type: ButtonTy
         .with_child((
             Text::new(text),
             TextFont {
-                font_size: 14.0,
+                font_size: FontSize::Px(14.0),
                 ..default()
             },
         ));
